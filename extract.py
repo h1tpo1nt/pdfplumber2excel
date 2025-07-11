@@ -1,57 +1,104 @@
 import pdfplumber
 import pandas as pd
-from typing import List, Optional
+import os
 
-def extract_tables_with_continuation(
-    pdf_path: str,
-    output_format: str = "csv",
-    min_continuation_rows: int = 1,  # Минимальное число строк для проверки продолжения
-) -> List[pd.DataFrame]:
-    """
-    Извлекает таблицы из PDF, объединяя продолжения на следующих страницах.
-    
-    :param pdf_path: Путь к PDF-файлу.
-    :param output_format: Формат сохранения ("csv" или "xlsx").
-    :param min_continuation_rows: Сколько строк сравнивать для определения продолжения.
-    :return: Список таблиц в виде DataFrame.
-    """
-    all_tables = []  # Готовые таблицы
-    current_table = None  # Текущая таблица (может продолжаться)
+
+def clean_cell(value):
+    """Функция для обработки содержимого каждой ячейки"""
+    if not value:
+        return value
+
+    # Убираем лишние пробелы
+    value = value.strip()
+
+    # Если значение в скобках — убираем скобки и делаем число отрицательным
+    if value.startswith('(') and value.endswith(')'):
+        number = value[1:-1]
+        return f'-{number}'
+
+    # Заменяем точку на запятую в десятичных числах, если нет запятой
+    if '.' in value and ',' not in value:
+        return value.replace('.', ',')
+
+    return value
+
+
+def extract_all_tables_to_single_csv(pdf_path):
+    # Получаем имя файла без расширения
+    base_name = os.path.splitext(os.path.basename(pdf_path))[0]
+    output_file = f"{base_name}.csv"  # создаём имя выходного файла
 
     with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            tables = page.extract_tables()
-            
-            for table in tables:
-                if not table:
-                    continue  # Пропускаем пустые
-                
-                # Если текущая таблица есть, проверяем продолжение
-                if current_table is not None:
-                    # Берём первые N строк новой таблицы и последние N текущей
-                    new_table_start = table[:min_continuation_rows]
-                    current_table_end = current_table[-min_continuation_rows:]
-                    
-                    # Если начала совпадают — это продолжение
-                    if new_table_start == current_table_end:
-                        current_table.extend(table[min_continuation_rows:])  # Объединяем
-                    else:
-                        all_tables.append(pd.DataFrame(current_table[1:], columns=current_table[0]))
-                        current_table = table  # Начинаем новую таблицу
-                else:
-                    current_table = table  # Первая таблица
-            
-        # Добавляем последнюю таблицу, если она есть
-        if current_table is not None:
-            all_tables.append(pd.DataFrame(current_table[1:], columns=current_table[0]))
+        total_pages = len(pdf.pages)
+        print(f"[INFO] Обрабатываем файл: {pdf_path}")
+        print(f"[INFO] Всего страниц: {total_pages}")
 
-    # Сохраняем каждую таблицу в отдельный файл
-    for i, df in enumerate(all_tables, 1):
-        output_file = f"table_{i}.{output_format}"
-        if output_format == "csv":
-            df.to_csv(output_file, index=False)
-        elif output_format == "xlsx":
-            df.to_excel(output_file, index=False)
-        print(f"Сохранено: {output_file}")
+        with open(output_file, 'w', encoding='utf-8') as f:
+            table_count = 0
 
-    return all_tables
+            for page_num, page in enumerate(pdf.pages, start=1):
+                print(f"\n[+] Страница {page_num} из {total_pages}")
+                tables = page.extract_tables()
+
+                if not tables:
+                    print("  └── Таблиц на странице не найдено")
+                    continue
+
+                print(f"  └── Найдено таблиц: {len(tables)}")
+
+                for j, table in enumerate(tables):
+                    # Добавляем маркер начала таблицы
+                    f.write(f'Table Start - Page {page_num}, Table {j + 1}\n')
+
+                    # Преобразуем в DataFrame
+                    df = pd.DataFrame(table[1:], columns=table[0])
+
+                    # Очищаем заголовки от лишних пробелов
+                    df.columns = df.columns.str.strip()
+
+                    # Применяем обработку к каждой ячейке
+                    df = df.applymap(clean_cell)
+
+                    # Сохраняем как CSV строка
+                    df.to_csv(f, index=False, header=True, lineterminator='\n')
+
+                    # Добавляем маркер конца таблицы
+                    f.write(f'Table End - Page {page_num}, Table {j + 1}\n\n')
+                    table_count += 1
+
+            print(f"\n✅ Всего извлечено таблиц: {table_count}")
+
+    print(f"[INFO] Все таблицы сохранены в: {output_file}")
+    return output_file
+
+
+# === Функция для обработки всех PDF-файлов в папке ===
+def process_pdfs_in_folder(folder_path):
+    # Создаём папку для результатов (если её нет)
+    output_folder = os.path.join(folder_path, "csv_results")
+    os.makedirs(output_folder, exist_ok=True)
+
+    # Ищем все PDF-файлы в папке
+    pdf_files = [f for f in os.listdir(folder_path) if f.lower().endswith('.pdf')]
+
+    if not pdf_files:
+        print("[INFO] В папке не найдено PDF-файлов.")
+        return
+
+    print(f"[INFO] Найдено PDF-файлов: {len(pdf_files)}")
+    for i, filename in enumerate(pdf_files, 1):
+        print(f"\n📁 [{i}/{len(pdf_files)}] Обработка файла: {filename}")
+        pdf_path = os.path.join(folder_path, filename)
+        result_file = extract_all_tables_to_single_csv(pdf_path)
+
+        # Перемещаем результат в папку csv_results
+        output_name = os.path.basename(result_file)
+        new_result_path = os.path.join(output_folder, output_name)
+        os.rename(result_file, new_result_path)
+        print(f"[INFO] Результат перемещён в: {new_result_path}")
+
+
+# === Пример использования ===
+if __name__ == "__main__":
+    folder = "/content/otchetnost"  # замените на путь к вашей папке
+    process_pdfs_in_folder(folder)
