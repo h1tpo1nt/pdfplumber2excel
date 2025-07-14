@@ -1,3 +1,5 @@
+!pip install pdfplumber pandas openpyxl
+
 import pdfplumber
 import pandas as pd
 import os
