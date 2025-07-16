@@ -1,9 +1,6 @@
-!pip install pdfplumber pandas openpyxl
-
 import pdfplumber
 import pandas as pd
 import os
-
 
 def clean_cell(value):
     """Функция для обработки содержимого каждой ячейки"""
@@ -62,7 +59,7 @@ def extract_all_tables_to_single_csv(pdf_path):
                     df = df.applymap(clean_cell)
 
                     # Сохраняем как CSV строка
-                    df.to_csv(f, index=False, header=True, sep=';', lineterminator='\n')
+                    df.to_csv(f, index=False, header=True, lineterminator='\n')
 
                     # Добавляем маркер конца таблицы
                     f.write(f'Table End - Page {page_num}, Table {j + 1}\n\n')
@@ -102,5 +99,5 @@ def process_pdfs_in_folder(folder_path):
 
 # === Пример использования ===
 if __name__ == "__main__":
-    folder = "/content/input_pdfs"  # замените на путь к вашей папке
+    folder = "/content/pdfs"  # замените на путь к вашей папке
     process_pdfs_in_folder(folder)
