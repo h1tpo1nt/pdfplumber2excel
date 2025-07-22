@@ -1,3 +1,5 @@
+pip install tabula-py pandas openpyxl
+
 import os
 import tabula
 import pandas as pd
@@ -182,3 +184,4 @@ for pdf_file in os.listdir(pdf_folder):
     wb.save(excel_path)
 
     print(f"✅ Сохранено: {excel_path}")
+print("\n✅ Обработка всех PDF-файлов завершена!")
